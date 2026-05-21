@@ -18,6 +18,10 @@ https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-in
 
 The userscript metadata includes `@downloadURL` and `@updateURL` pointing at the GitHub raw file, so compatible userscript managers can check GitHub for updates.
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
 ## Features
 
 - Dims common lower-priority iNaturalist dashboard updates.
