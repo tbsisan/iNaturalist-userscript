@@ -4,13 +4,19 @@ A userscript for improving the iNaturalist dashboard update feed by dimming, shr
 
 ## Install
 
-Install the userscript from the raw GitHub URL after this repository is published, or open the local file in your userscript manager:
+Install with a userscript manager such as Tampermonkey, Violentmonkey, or Greasemonkey:
+
+[Install Improve iNat Somewhat](https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js)
+
+If the install prompt does not open automatically, copy this URL into your userscript manager:
 
 ```text
-improve-inat-somewhat.user.js
+https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
 ```
 
-Compatible with Tampermonkey/Greasemonkey-style userscript managers.
+## Updates
+
+The userscript metadata includes `@downloadURL` and `@updateURL` pointing at the GitHub raw file, so compatible userscript managers can check GitHub for updates.
 
 ## Features
 

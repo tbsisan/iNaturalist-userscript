@@ -4,6 +4,10 @@
 // @version      0.7.11
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
+// @homepageURL  https://github.com/tbsisan/iNaturalist-userscript
+// @supportURL   https://github.com/tbsisan/iNaturalist-userscript/issues
+// @downloadURL  https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
+// @updateURL    https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
 // @match        https://www.inaturalist.org/home*
 // @match        https://www.inaturalist.org/users/dashboard_updates*
 // @grant        GM_registerMenuCommand
