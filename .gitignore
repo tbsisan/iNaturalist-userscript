@@ -1,0 +1,8 @@
+# Local page captures / debugging artifacts
+*.html
+*snippets*.txt
+*.swp
+.*.swp
+
+# OS/editor noise
+.DS_Store
