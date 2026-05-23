@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.5
+// @version      0.10.6
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -344,18 +344,23 @@
     return null;
   }
 
+  function hostTaxonCanonicalName(speciesName) {
+    return String(speciesName || "").replace(/\s+aff\.?\s+/i, " ");
+  }
+
   function hostTaxonSearchName(speciesName) {
-    return String(speciesName || "").replace(/×/g, "x");
+    return hostTaxonCanonicalName(speciesName).replace(/×/g, "x");
   }
 
   function hostTaxonMultiplicationName(speciesName) {
-    return String(speciesName || "").replace(/(\s)x(\s)/g, "$1×$2");
+    return hostTaxonCanonicalName(speciesName).replace(/(\s)x(\s)/g, "$1×$2");
   }
 
   function hostTaxonLabelMatches(labelText, speciesName) {
     const label = normalizeText(labelText);
     const candidateNames = [
       speciesName,
+      hostTaxonCanonicalName(speciesName),
       hostTaxonSearchName(speciesName),
       hostTaxonMultiplicationName(speciesName),
     ].map(name => normalizeText(name)).filter(Boolean);
@@ -1191,7 +1196,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.5");
+    log("starting v0.10.6");
     registerMenus();
 
     if (isObservationPage()) {
