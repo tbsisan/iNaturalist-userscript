@@ -93,7 +93,16 @@ On observation pages, saved project groups can be used to add the observation to
 - Adds small buttons near the “Add to a Project” input:
   - `Save project group` — saves all projects currently listed on the observation as a named group.
   - `Add project group` — prompts for a saved group name and adds each project in that group to the observation.
-- Project groups are saved as `group=Project One, Project Two` lists and can be shown/edited/cleared from the userscript-manager menu.
+- Project groups can be shown/edited/cleared from the userscript-manager menu.
+- The editor uses a large textarea and stores groups in a multi-line format:
+
+```text
+my group:
+  Project One
+  Project Two
+```
+
+- The older one-line `group=Project One, Project Two` format is still accepted when editing.
 - Keyboard shortcuts are available when focus is not inside an input/textarea:
   - `Ctrl-M`, then `Ctrl-P` — make/save a project group from the current observation page.
   - `Ctrl-A`, then `Ctrl-P` — add a saved project group to the current observation page.

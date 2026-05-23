@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.11.0
+// @version      0.11.1
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -242,23 +242,54 @@
 
   function projectGroupLines(groups = projectGroups()) {
     return Object.entries(groups)
-      .map(([groupName, projects]) => `${groupName}=${projects.join(", ")}`)
-      .join("\n");
+      .map(([groupName, projects]) => `${groupName}:\n${projects.map(project => `  ${project}`).join("\n")}`)
+      .join("\n\n");
   }
 
   function parseProjectGroupLines(input) {
     const parsed = {};
+    let currentGroupName = "";
+    let currentProjects = [];
+
+    function saveCurrentGroup() {
+      if (!currentGroupName) return;
+      const projects = normalizeProjectList(currentProjects);
+      if (!projects.length) throw new Error(`Missing project list for group: ${currentGroupName}`);
+      parsed[currentGroupName] = projects;
+    }
+
     for (const rawLine of String(input || "").split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line) continue;
+
       const equals = line.indexOf("=");
-      if (equals <= 0) throw new Error(`Use group=Project One, Project Two. Invalid line: ${line}`);
-      const groupName = line.slice(0, equals).trim();
-      const projects = normalizeProjectList(line.slice(equals + 1).split(","));
-      if (!groupName) throw new Error(`Missing group name in line: ${line}`);
-      if (!projects.length) throw new Error(`Missing project list for group: ${groupName}`);
-      parsed[groupName] = projects;
+      if (equals > 0) {
+        saveCurrentGroup();
+        currentGroupName = line.slice(0, equals).trim();
+        currentProjects = line.slice(equals + 1).split(",");
+        if (!currentGroupName) throw new Error(`Missing group name in line: ${line}`);
+        saveCurrentGroup();
+        currentGroupName = "";
+        currentProjects = [];
+        continue;
+      }
+
+      const groupHeader = line.match(/^(.+):$/);
+      if (groupHeader) {
+        saveCurrentGroup();
+        currentGroupName = groupHeader[1].trim();
+        currentProjects = [];
+        if (!currentGroupName) throw new Error(`Missing group name in line: ${line}`);
+        continue;
+      }
+
+      if (!currentGroupName) {
+        throw new Error(`Use either "group=Project One, Project Two" or a multi-line group headed by "group:". Invalid line: ${line}`);
+      }
+      currentProjects.push(line.replace(/^[-•*]\s*/, ""));
     }
+
+    saveCurrentGroup();
     return parsed;
   }
 
@@ -1327,6 +1358,137 @@
     }, 100);
   }
 
+  function openLargeTextEditorDialog({ title, helpText, initialValue, saveLabel = "Save", onSave }) {
+    const existing = document.getElementById("hermes-inat-large-text-editor");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "hermes-inat-large-text-editor";
+    overlay.style.cssText = [
+      "position: fixed",
+      "inset: 0",
+      "z-index: 2147483647",
+      "background: rgba(0,0,0,0.45)",
+      "display: flex",
+      "align-items: center",
+      "justify-content: center",
+      "padding: 24px"
+    ].join("; ");
+
+    const dialog = document.createElement("div");
+    dialog.style.cssText = [
+      "width: min(980px, 96vw)",
+      "max-height: 92vh",
+      "background: #fff",
+      "color: #222",
+      "border-radius: 8px",
+      "box-shadow: 0 10px 40px rgba(0,0,0,0.35)",
+      "font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      "display: flex",
+      "flex-direction: column",
+      "overflow: hidden"
+    ].join("; ");
+
+    const header = document.createElement("div");
+    header.style.cssText = "padding: 14px 16px; border-bottom: 1px solid #ddd;";
+    const heading = document.createElement("div");
+    heading.textContent = title;
+    heading.style.cssText = "font-size: 18px; font-weight: 600; margin-bottom: 6px;";
+    const help = document.createElement("div");
+    help.textContent = helpText;
+    help.style.cssText = "color: #555;";
+    header.append(heading, help);
+
+    const textarea = document.createElement("textarea");
+    textarea.value = initialValue || "";
+    textarea.spellcheck = false;
+    textarea.style.cssText = [
+      "box-sizing: border-box",
+      "width: 100%",
+      "height: min(62vh, 620px)",
+      "min-height: 360px",
+      "padding: 14px 16px",
+      "border: 0",
+      "border-bottom: 1px solid #ddd",
+      "resize: vertical",
+      "font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      "white-space: pre",
+      "outline: none"
+    ].join("; ");
+
+    const error = document.createElement("div");
+    error.style.cssText = "display: none; padding: 10px 16px; color: #8a1f11; background: #fff3f0; border-bottom: 1px solid #f1c8bf; white-space: pre-wrap;";
+
+    const footer = document.createElement("div");
+    footer.style.cssText = "display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; background: #fafafa;";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "btn btn-default";
+    cancelButton.textContent = "Cancel";
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.className = "btn btn-primary";
+    saveButton.textContent = saveLabel;
+    footer.append(cancelButton, saveButton);
+
+    function closeDialog() {
+      overlay.remove();
+      document.removeEventListener("keydown", onKeyDown, true);
+    }
+
+    function showError(err) {
+      error.textContent = err && err.message ? err.message : String(err || "Unknown error");
+      error.style.display = "block";
+    }
+
+    function saveDialog() {
+      try {
+        onSave(textarea.value);
+        closeDialog();
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDialog();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveDialog();
+      }
+    }
+
+    cancelButton.addEventListener("click", closeDialog);
+    saveButton.addEventListener("click", saveDialog);
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) closeDialog();
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+
+    dialog.append(header, textarea, error, footer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    textarea.focus();
+    textarea.setSelectionRange(0, textarea.value.length);
+  }
+
+  function editProjectGroupsInLargeDialog() {
+    openLargeTextEditorDialog({
+      title: "Edit project groups",
+      helpText: "Use multi-line groups like “group:” followed by one project per line. The old “group=Project One, Project Two” format also still works. Save with Cmd/Ctrl-S.",
+      initialValue: projectGroupLines(),
+      saveLabel: "Save project groups",
+      onSave(value) {
+        setProjectGroups(parseProjectGroupLines(value));
+        updateBadge();
+        alert("Project groups saved.");
+      }
+    });
+  }
+
   function registerMenus() {
     if (typeof GM_registerMenuCommand !== "function") return;
     const MENU_HEADER_LINE_DASHES = 23;
@@ -1468,20 +1630,7 @@
       const lines = projectGroupLines();
       alert(`Project groups:\n${lines || "None"}\n\nOn observation pages, use Add project group to add each saved project to the current observation. Keyboard shortcuts: Ctrl-M Ctrl-P saves the current page's projects as a group; Ctrl-A Ctrl-P adds a saved group.`);
     });
-    GM_registerMenuCommand("Edit all project groups", () => {
-      const input = prompt(
-        "Edit project groups, one per line, as group=Project One, Project Two.\n\nThese project names must match iNaturalist's project autocomplete labels.",
-        projectGroupLines()
-      );
-      if (input === null) return;
-      try {
-        setProjectGroups(parseProjectGroupLines(input));
-        updateBadge();
-        alert("Project groups saved.");
-      } catch (err) {
-        alert(`Invalid project groups:\n${err.message}`);
-      }
-    });
+    GM_registerMenuCommand("Edit all project groups", editProjectGroupsInLargeDialog);
     GM_registerMenuCommand("Clear all project groups", () => {
       clearProjectGroups();
       updateBadge();
@@ -1608,7 +1757,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.11.0");
+    log("starting v0.11.1");
     registerMenus();
 
     if (isObservationPage()) {
