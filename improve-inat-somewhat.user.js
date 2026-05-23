@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.0
+// @version      0.10.1
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -454,17 +454,11 @@
     autocompleteSearch($taxonInput, speciesName);
 
     const $taxonChoice = await waitFor(`taxon dropdown result ${speciesName}`, () => {
-      const exactMatches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
-        const subtitle = normalizeText(page$(this).find(".ac-label .subtitle").first().text());
-        return subtitle === speciesName;
+      const matches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
+        const labelText = normalizeText(page$(this).find(".ac-label").first().text());
+        return labelText.includes(speciesName);
       });
-      if (exactMatches.length) return exactMatches.first();
-
-      const containsMatches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
-        const subtitle = normalizeText(page$(this).find(".ac-label .subtitle").first().text());
-        return subtitle.includes(speciesName);
-      });
-      return containsMatches.length ? containsMatches.first() : null;
+      return matches.length ? matches.first() : null;
     }, { timeout: 7000 });
 
     const taxonId = $taxonChoice.attr("data-taxon-id") || "unknown taxon id";
@@ -1122,7 +1116,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.0");
+    log("starting v0.10.1");
     registerMenus();
 
     if (isObservationPage()) {
