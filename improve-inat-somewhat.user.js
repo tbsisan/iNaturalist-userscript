@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.1
+// @version      0.10.2
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -417,6 +417,19 @@
       .filter(function () { return page$(this).is(":visible"); });
   }
 
+  function addButtonForTaxonInput($taxonInput) {
+    const page$ = pageJQuery();
+    const $form = $taxonInput.closest("form");
+    const $scope = $form.length ? $form : $taxonInput.closest(".form-group, .ObservationFieldInput, .panel, div");
+    const $buttons = $scope.find('button[type="submit"], input[type="submit"], button')
+      .filter(function () {
+        const label = normalizeText(page$(this).text() || page$(this).val());
+        return label === "Add";
+      })
+      .filter(function () { return page$(this).is(":visible"); });
+    return $buttons.length ? $buttons.first() : page$();
+  }
+
   async function chooseObservationField(fieldName) {
     const page$ = pageJQuery();
     if (!page$) throw new Error("Page jQuery is not available");
@@ -465,6 +478,11 @@
     clickAutocompleteChoice($taxonChoice);
     log(`host plant: selected ${speciesName} (${taxonId})`);
     await sleep(350);
+    const $addButton = addButtonForTaxonInput($taxonInput);
+    if (!$addButton.length) throw new Error(`Could not find visible Add button after selecting ${speciesName}`);
+    clickAutocompleteChoice($addButton);
+    log(`host plant: clicked Add for ${speciesName} (${taxonId})`);
+    await sleep(500);
     return taxonId;
   }
 
@@ -1116,7 +1134,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.1");
+    log("starting v0.10.2");
     registerMenus();
 
     if (isObservationPage()) {
