@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.2
+// @version      0.10.3
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -411,6 +411,42 @@
       .trigger("click");
   }
 
+  function closeAutocompleteMenuForInput($input, reason) {
+    const page$ = pageJQuery();
+    if (!page$ || !$input || !$input.length) return;
+
+    let $menu = page$();
+    if (typeof $input.autocomplete === "function") {
+      try {
+        $input.autocomplete("close");
+      } catch (err) {
+        log(`host plant: autocomplete close call failed after ${reason}; continuing`, err);
+      }
+
+      try {
+        $menu = $input.autocomplete("widget");
+      } catch (err) {
+        // Some iNat autocomplete inputs are not full jQuery UI widgets. Fall through
+        // to aria-owned menu lookup and defensive hiding below.
+      }
+    }
+
+    const ariaMenuId = $input.attr("aria-owns") || $input.attr("aria-controls");
+    if (ariaMenuId) $menu = $menu.add(page$(`#${ariaMenuId}`));
+
+    // iNat's observation-field chooser can leave a plain visible/open menu behind
+    // even after the widget close call. Limit the fallback to non-taxon menus so
+    // we do not accidentally hide the host-species dropdown later.
+    $menu = $menu.add(page$("ul.ui-autocomplete.open, ul.ui-autocomplete:visible").filter(function () {
+      return page$(this).find("div.ac:not([data-taxon-id])").length > 0;
+    }));
+    if ($menu.length) $menu.removeClass("open").hide();
+
+    $input.trigger("blur");
+    page$(document).trigger(page$.Event("keydown", { key: "Escape", keyCode: 27, which: 27 }));
+    log(`host plant: closed autocomplete menu after ${reason}`);
+  }
+
   function visibleTaxonInputs() {
     const page$ = pageJQuery();
     return page$('input[name="taxon_name"][placeholder="Species name"]')
@@ -450,6 +486,8 @@
     const beforeTaxonInputCount = visibleTaxonInputs().length;
     clickAutocompleteChoice($choice);
     log(`host plant: clicked observation field ${fieldName}`);
+    await sleep(100);
+    closeAutocompleteMenuForInput($fieldInput, `choosing observation field ${fieldName}`);
     await sleep(250);
 
     return { beforeTaxonInputCount };
@@ -1134,7 +1172,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.2");
+    log("starting v0.10.3");
     registerMenus();
 
     if (isObservationPage()) {
