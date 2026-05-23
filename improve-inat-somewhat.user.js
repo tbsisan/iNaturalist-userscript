@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.6
+// @version      0.10.7
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -348,7 +348,14 @@
     return String(speciesName || "").replace(/\s+aff\.?\s+/i, " ");
   }
 
+  function hostTaxonCfGenus(speciesName) {
+    const match = String(speciesName || "").match(/^\s*([a-zA-Z.-]+)\s+cf\.?\s+/i);
+    return match ? match[1] : null;
+  }
+
   function hostTaxonSearchName(speciesName) {
+    const cfGenus = hostTaxonCfGenus(speciesName);
+    if (cfGenus) return cfGenus;
     return hostTaxonCanonicalName(speciesName).replace(/×/g, "x");
   }
 
@@ -365,6 +372,20 @@
       hostTaxonMultiplicationName(speciesName),
     ].map(name => normalizeText(name)).filter(Boolean);
     return candidateNames.some(name => label.includes(name));
+  }
+
+  function hostTaxonChoiceMatches($choice, speciesName) {
+    const page$ = pageJQuery();
+    const cfGenus = hostTaxonCfGenus(speciesName);
+    if (cfGenus) {
+      const genusLabel = `Genus ${cfGenus}`;
+      const labelText = normalizeText($choice.find(".ac-label").first().text());
+      const subtitleText = normalizeText($choice.find(".ac-label .subtitle").first().text());
+      return subtitleText === genusLabel || labelText.includes(genusLabel);
+    }
+
+    const labelText = normalizeText(page$($choice).find(".ac-label").first().text());
+    return hostTaxonLabelMatches(labelText, speciesName);
   }
 
   function installHostPlantButton() {
@@ -530,8 +551,7 @@
 
     const $taxonChoice = await waitFor(`taxon dropdown result ${speciesName}`, () => {
       const matches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
-        const labelText = normalizeText(page$(this).find(".ac-label").first().text());
-        return hostTaxonLabelMatches(labelText, speciesName);
+        return hostTaxonChoiceMatches(page$(this), speciesName);
       });
       return matches.length ? matches.first() : null;
     }, { timeout: 7000 });
@@ -1196,7 +1216,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.6");
+    log("starting v0.10.7");
     registerMenus();
 
     if (isObservationPage()) {
