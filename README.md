@@ -4,11 +4,17 @@ A userscript for making iNaturalist easier to skim and annotate. It improves the
 
 ## Install
 
-Install with a userscript manager such as Tampermonkey, Violentmonkey, or Greasemonkey:
+Install with a userscript manager such as Tampermonkey, Violentmonkey, or Greasemonkey.
 
-[Install Improve iNat Somewhat](https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js)
+Recommended install source:
 
-If the install prompt does not open automatically, copy this URL into your userscript manager:
+[Install Improve iNat Somewhat from Greasy Fork](https://greasyfork.org/en/scripts/579390-improve-inat-somewhat)
+
+You can also install directly from the GitHub source if you prefer:
+
+[Install from GitHub raw source](https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js)
+
+If the GitHub install prompt does not open automatically, copy this URL into your userscript manager:
 
 ```text
 https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
@@ -16,7 +22,7 @@ https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-in
 
 ## Updates
 
-The userscript metadata includes `@downloadURL` and `@updateURL` pointing at the GitHub raw file, so compatible userscript managers can check GitHub for updates.
+Greasy Fork is the recommended install/update source. The userscript metadata also includes `@downloadURL` and `@updateURL` pointing at the GitHub raw file, so compatible userscript managers can check GitHub for updates when installed from GitHub.
 
 ## Features
 
