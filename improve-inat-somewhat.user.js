@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.8.2
+// @version      0.9.0
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -10,6 +10,7 @@
 // @downloadURL  https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
 // @updateURL    https://raw.githubusercontent.com/tbsisan/iNaturalist-userscript/main/improve-inat-somewhat.user.js
 // @match        https://www.inaturalist.org/home*
+// @match        https://www.inaturalist.org/observations/*
 // @match        https://www.inaturalist.org/users/dashboard_updates*
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
@@ -227,6 +228,58 @@
     const entries = Object.entries(parsed);
     if (entries.length !== 1) throw new Error("Enter exactly one nickname=username pair.");
     return entries[0];
+  }
+
+  function observationNicknameEntries() {
+    return Object.entries(nicknameMap())
+      .map(([nickname, username]) => ({ nickname, username }))
+      .filter(item => item.nickname && item.username)
+      .sort((a, b) => b.nickname.length - a.nickname.length);
+  }
+
+  function isObservationCommentTextarea(element) {
+    if (!element || element.tagName !== "TEXTAREA") return false;
+    const placeholder = String(element.getAttribute("placeholder") || "").trim();
+    return /leave a comment/i.test(placeholder);
+  }
+
+  function nicknameMatchBeforeCaret(beforeCaret) {
+    for (const entry of observationNicknameEntries()) {
+      if (!beforeCaret.endsWith(entry.nickname)) continue;
+      const start = beforeCaret.length - entry.nickname.length;
+      const previousChar = start > 0 ? beforeCaret[start - 1] : "";
+      if (previousChar && !/\s/.test(previousChar)) continue;
+      return { ...entry, start };
+    }
+    return null;
+  }
+
+  function expandNicknameBeforeSpace(event) {
+    if (event.defaultPrevented) return;
+    if (event.key !== " " && event.key !== "Spacebar" && event.code !== "Space") return;
+
+    const textarea = document.activeElement;
+    if (!isObservationCommentTextarea(textarea)) return;
+    if (typeof textarea.selectionStart !== "number" || typeof textarea.selectionEnd !== "number") return;
+    if (textarea.selectionStart !== textarea.selectionEnd) return;
+
+    const beforeCaret = textarea.value.slice(0, textarea.selectionStart);
+    const match = nicknameMatchBeforeCaret(beforeCaret);
+    if (!match) return;
+
+    event.preventDefault();
+    const replacement = `${match.username} `;
+    textarea.setRangeText(replacement, match.start, textarea.selectionEnd, "end");
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: replacement }));
+    log(`expanded nickname ${match.nickname} -> ${match.username}`);
+  }
+
+  function isObservationPage() {
+    return /^\/observations\/\d+(?:$|[/?#])/.test(window.location.pathname + window.location.search + window.location.hash);
+  }
+
+  function isDashboardPage() {
+    return /^\/(home|users\/dashboard_updates)(?:$|[/?#])/.test(window.location.pathname + window.location.search + window.location.hash);
   }
 
   function regexFromUserInput(input) {
@@ -730,13 +783,9 @@
       alert("All highlighting regexes cleared.");
     });
     registerMenuHeader("Nicknames");
-    GM_registerMenuCommand("Show current nicknames", () => {
-      const lines = nicknameMapLines();
-      alert(`Nicknames:\n${lines || "None"}\n\nThese are saved mappings only. They do not change page behavior yet.`);
-    });
-    GM_registerMenuCommand("Add new: Nickname", () => {
+    GM_registerMenuCommand("Add new: nickname", () => {
       const input = prompt(
-        "Enter one nickname mapping as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nThis adds or replaces one nickname. It does not change page behavior yet. Leave blank to cancel.",
+        "Enter one nickname mapping as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nThis adds or replaces one nickname. On observation pages, typing the nickname followed by Space in a comment box expands it. Leave blank to cancel.",
         ""
       );
       if (input === null) return;
@@ -746,21 +795,25 @@
         const [nickname, username] = parseSingleNicknameLine(trimmed);
         addNickname(nickname, username);
         updateBadge();
-        alert(`Nickname saved:\n${nickname} = ${username}\n\nThis mapping is stored for future nickname behavior; it does not change the page yet.`);
+        alert(`Nickname saved:\n${nickname} = ${username}\n\nOn observation pages, type ${nickname} followed by Space in a comment box to expand it.`);
       } catch (err) {
         alert(`Invalid nickname mapping:\n${err.message}`);
       }
     });
+    GM_registerMenuCommand("Show current nicknames", () => {
+      const lines = nicknameMapLines();
+      alert(`Nicknames:\n${lines || "None"}\n\nOn observation pages, typing a nickname followed by Space in a comment box expands it to the saved username(s).`);
+    });
     GM_registerMenuCommand("Edit all nicknames", () => {
       const input = prompt(
-        "Edit nickname mappings, one per line, as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nThese mappings are stored only; they do not change page behavior yet.",
+        "Edit nickname mappings, one per line, as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nOn observation pages, typing a nickname followed by Space in a comment box expands it.",
         nicknameMapLines()
       );
       if (input === null) return;
       try {
         setNicknameMap(parseNicknameMapLines(input));
         updateBadge();
-        alert("Nicknames saved. These mappings are stored for future nickname behavior; they do not change the page yet.");
+        alert("Nicknames saved. On observation pages, typing a nickname followed by Space in a comment box expands it.");
       } catch (err) {
         alert(`Invalid nickname mappings:\n${err.message}`);
       }
@@ -861,8 +914,15 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.8.2");
+    log("starting v0.9.0");
     registerMenus();
+
+    if (isObservationPage()) {
+      document.addEventListener("keydown", expandNicknameBeforeSpace, true);
+      log("observation nickname expansion enabled");
+    }
+
+    if (!isDashboardPage()) return;
 
     waitForCardsAndApply();
 

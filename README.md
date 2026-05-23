@@ -28,5 +28,6 @@ MIT. See [LICENSE](LICENSE).
 - Supports additive custom dimming regexes.
 - Supports additive custom highlighting regexes.
 - Provides userscript-manager menu controls for status, regex lists, nickname mappings, built-in filters, and dimming modes.
-- Saves nickname mappings as `nickname=@username` pairs for future nickname behavior, including comma-separated username lists.
+- Saves nickname mappings as `nickname=@username` pairs, including comma-separated username lists.
+- Expands saved nicknames into full `@username` mentions when typing comments on observation pages.
 - Handles dynamically loaded dashboard update cards.
