@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.8.1
+// @version      0.8.2
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -177,10 +177,19 @@
     const cleaned = {};
     for (const [nickname, username] of Object.entries(source || {})) {
       const cleanNickname = String(nickname || "").trim();
-      const cleanUsername = String(username || "").trim().replace(/^@+/, "");
+      const cleanUsername = normalizeNicknameUsernameList(username);
       if (cleanNickname && cleanUsername) cleaned[cleanNickname] = cleanUsername;
     }
     return cleaned;
+  }
+
+  function normalizeNicknameUsernameList(username) {
+    return String(username || "")
+      .split(",")
+      .map(name => name.trim().replace(/^@+/, ""))
+      .filter(Boolean)
+      .map(name => `@${name}`)
+      .join(", ");
   }
 
   function addNickname(nickname, username) {
@@ -206,7 +215,7 @@
       if (!separator) throw new Error(`Use nickname=username format for: ${line}`);
       const [nicknamePart, ...usernameParts] = line.split(separator);
       const nickname = nicknamePart.trim();
-      const username = usernameParts.join(separator).trim().replace(/^@+/, "");
+      const username = normalizeNicknameUsernameList(usernameParts.join(separator));
       if (!nickname || !username) throw new Error(`Missing nickname or username for: ${line}`);
       parsed[nickname] = username;
     }
@@ -727,7 +736,7 @@
     });
     GM_registerMenuCommand("Add new: Nickname", () => {
       const input = prompt(
-        "Enter one nickname mapping as nickname=username.\n\nExample:\nTom=tbsisan\n\nThis adds or replaces one nickname. It does not change page behavior yet. Leave blank to cancel.",
+        "Enter one nickname mapping as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nThis adds or replaces one nickname. It does not change page behavior yet. Leave blank to cancel.",
         ""
       );
       if (input === null) return;
@@ -744,7 +753,7 @@
     });
     GM_registerMenuCommand("Edit all nicknames", () => {
       const input = prompt(
-        "Edit nickname mappings, one per line, as nickname=username.\n\nExample:\nTom=tbsisan\nPenny=pennyinat\n\nThese mappings are stored only; they do not change page behavior yet.",
+        "Edit nickname mappings, one per line, as nickname=username. Usernames can be comma-separated. @ is added automatically.\n\nExamples:\ntom=tom1548\nsc=sbrobeson, carnifex\n\nThese mappings are stored only; they do not change page behavior yet.",
         nicknameMapLines()
       );
       if (input === null) return;
@@ -852,7 +861,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.8.1");
+    log("starting v0.8.2");
     registerMenus();
 
     waitForCardsAndApply();
