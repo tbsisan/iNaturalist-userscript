@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.3
+// @version      0.10.4
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -344,6 +344,17 @@
     return null;
   }
 
+  function hostTaxonSearchName(speciesName) {
+    return String(speciesName || "").replace(/×/g, "x");
+  }
+
+  function hostTaxonLabelMatches(labelText, speciesName) {
+    const label = normalizeText(labelText);
+    const notesName = normalizeText(speciesName);
+    const searchName = normalizeText(hostTaxonSearchName(speciesName));
+    return label.includes(notesName) || label.includes(searchName);
+  }
+
   function installHostPlantButton() {
     if (!isObservationPage()) return false;
     if (document.getElementById(HOST_PLANT_BUTTON_ID)) return true;
@@ -501,13 +512,14 @@
       return $inputs.length ? $inputs.last() : null;
     });
 
-    log(`host plant: entering species ${speciesName}`);
-    autocompleteSearch($taxonInput, speciesName);
+    const searchName = hostTaxonSearchName(speciesName);
+    log(`host plant: entering species ${searchName}`, searchName === speciesName ? null : { notesName: speciesName });
+    autocompleteSearch($taxonInput, searchName);
 
     const $taxonChoice = await waitFor(`taxon dropdown result ${speciesName}`, () => {
       const matches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
         const labelText = normalizeText(page$(this).find(".ac-label").first().text());
-        return labelText.includes(speciesName);
+        return hostTaxonLabelMatches(labelText, speciesName);
       });
       return matches.length ? matches.first() : null;
     }, { timeout: 7000 });
@@ -1172,7 +1184,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.3");
+    log("starting v0.10.4");
     registerMenus();
 
     if (isObservationPage()) {
