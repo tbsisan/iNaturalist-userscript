@@ -108,7 +108,11 @@ on <em>Parthenocissus inserta</em>
 Fill host fields: <taxon>
 ```
 
-- When clicked, it uses iNaturalist’s own jQuery/autocomplete UI to fill these observation fields in order:
+- When clicked, it uses iNaturalist’s own jQuery/autocomplete UI to fill host-related observation fields.
+- Before filling, it checks the candidate host taxon against the iNaturalist v1 `/taxa` API.
+  - If the first taxa result has `iconic_taxon_name: "Plantae"`, it fills all host-plant fields.
+  - If the candidate host is not Plantae, or if the lookup fails, it only fills the generic `Host` field.
+- For plant hosts, it fills these observation fields in order:
   - `Host`
   - `Host plant`
   - `Host Plant ID`

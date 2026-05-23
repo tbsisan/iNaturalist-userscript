@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.7
+// @version      0.10.8
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -75,7 +75,9 @@
   const STYLE_ID = "hermes-inat-filter-style";
   const BADGE_ID = "hermes-inat-filter-badge";
   const HOST_PLANT_BUTTON_ID = "hermes-inat-fill-host-plant-fields";
-  const HOST_PLANT_FIELD_NAMES = ["Host", "Host plant", "Host Plant ID"];
+  const HOST_FIELD_NAME = "Host";
+  const HOST_PLANT_FIELD_NAMES = [HOST_FIELD_NAME, "Host plant", "Host Plant ID"];
+  const INAT_TAXA_API_URL = "https://api.inaturalist.org/v1/taxa";
 
   let badgeUpdateTimer = null;
 
@@ -388,6 +390,39 @@
     return hostTaxonLabelMatches(labelText, speciesName);
   }
 
+  async function lookupHostTaxon(speciesName) {
+    const query = hostTaxonSearchName(speciesName);
+    const params = new URLSearchParams({
+      q: query,
+      order: "desc",
+      order_by: "observations_count"
+    });
+    const response = await fetch(`${INAT_TAXA_API_URL}?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+      credentials: "omit"
+    });
+    if (!response.ok) throw new Error(`iNaturalist taxa lookup failed with HTTP ${response.status}`);
+
+    const data = await response.json();
+    const firstResult = data && Array.isArray(data.results) ? data.results[0] : null;
+    const iconicTaxonName = firstResult ? firstResult.iconic_taxon_name : null;
+    const taxonName = firstResult ? firstResult.name : null;
+    log(`host plant: taxa API lookup for ${query}`, { taxonName, iconicTaxonName });
+    return { query, taxonName, iconicTaxonName };
+  }
+
+  async function hostObservationFieldNamesForTaxon(speciesName) {
+    try {
+      const taxon = await lookupHostTaxon(speciesName);
+      if (taxon.iconicTaxonName === "Plantae") return HOST_PLANT_FIELD_NAMES;
+      log(`host plant: ${taxon.query} is not Plantae; only filling ${HOST_FIELD_NAME}`, taxon);
+      return [HOST_FIELD_NAME];
+    } catch (err) {
+      log(`host plant: taxa API lookup failed for ${speciesName}; only filling ${HOST_FIELD_NAME}`, err);
+      return [HOST_FIELD_NAME];
+    }
+  }
+
   function installHostPlantButton() {
     if (!isObservationPage()) return false;
     if (document.getElementById(HOST_PLANT_BUTTON_ID)) return true;
@@ -572,9 +607,10 @@
     const page$ = pageJQuery();
     if (!page$) throw new Error("Page jQuery is not available");
 
-    log(`host plant: filling observation fields for ${speciesName}`, HOST_PLANT_FIELD_NAMES);
+    const fieldNames = await hostObservationFieldNamesForTaxon(speciesName);
+    log(`host plant: filling observation fields for ${speciesName}`, fieldNames);
     const results = [];
-    for (const fieldName of HOST_PLANT_FIELD_NAMES) {
+    for (const fieldName of fieldNames) {
       const { beforeTaxonInputCount } = await chooseObservationField(fieldName);
       const taxonId = await chooseTaxonForNewestField(speciesName, beforeTaxonInputCount);
       results.push(`${fieldName}: ${taxonId}`);
@@ -1216,7 +1252,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.7");
+    log("starting v0.10.8");
     registerMenus();
 
     if (isObservationPage()) {
