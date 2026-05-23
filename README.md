@@ -27,5 +27,6 @@ MIT. See [LICENSE](LICENSE).
 - Dims common lower-priority iNaturalist dashboard updates.
 - Supports additive custom dimming regexes.
 - Supports additive custom highlighting regexes.
-- Provides userscript-manager menu controls for status, regex lists, built-in filters, and dimming modes.
+- Provides userscript-manager menu controls for status, regex lists, nickname mappings, built-in filters, and dimming modes.
+- Saves nickname mappings as `nickname=username` pairs for future nickname behavior.
 - Handles dynamically loaded dashboard update cards.

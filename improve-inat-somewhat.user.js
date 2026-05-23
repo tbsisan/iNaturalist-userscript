@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.7.11
+// @version      0.8.1
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -161,6 +161,63 @@
 
   function clearHighlightRegexPatterns() {
     setRegexPatternList("highlightRegexes", "highlightRegex", []);
+  }
+
+  function nicknameMap() {
+    const saved = gmGet("nicknames", {});
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return nicknameMapFromObject(saved);
+  }
+
+  function setNicknameMap(nicknames) {
+    gmSet("nicknames", nicknameMapFromObject(nicknames));
+  }
+
+  function nicknameMapFromObject(source) {
+    const cleaned = {};
+    for (const [nickname, username] of Object.entries(source || {})) {
+      const cleanNickname = String(nickname || "").trim();
+      const cleanUsername = String(username || "").trim().replace(/^@+/, "");
+      if (cleanNickname && cleanUsername) cleaned[cleanNickname] = cleanUsername;
+    }
+    return cleaned;
+  }
+
+  function addNickname(nickname, username) {
+    setNicknameMap({ ...nicknameMap(), [nickname]: username });
+  }
+
+  function clearNicknames() {
+    setNicknameMap({});
+  }
+
+  function nicknameMapLines(nicknames = nicknameMap()) {
+    return Object.entries(nicknames)
+      .map(([nickname, username]) => `${nickname}=${username}`)
+      .join("\n");
+  }
+
+  function parseNicknameMapLines(input) {
+    const parsed = {};
+    for (const rawLine of String(input || "").split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const separator = line.includes("=") ? "=" : line.includes(":") ? ":" : null;
+      if (!separator) throw new Error(`Use nickname=username format for: ${line}`);
+      const [nicknamePart, ...usernameParts] = line.split(separator);
+      const nickname = nicknamePart.trim();
+      const username = usernameParts.join(separator).trim().replace(/^@+/, "");
+      if (!nickname || !username) throw new Error(`Missing nickname or username for: ${line}`);
+      parsed[nickname] = username;
+    }
+    return nicknameMapFromObject(parsed);
+  }
+
+  function parseSingleNicknameLine(input) {
+    const parsed = parseNicknameMapLines(input);
+    const entries = Object.entries(parsed);
+    if (entries.length !== 1) throw new Error("Enter exactly one nickname=username pair.");
+    return entries[0];
   }
 
   function regexFromUserInput(input) {
@@ -553,13 +610,16 @@
     const enabled = FILTERS.filter(isFilterEnabled).map(f => f.name);
     const custom = customRegexPatterns();
     const highlight = highlightRegexPatterns();
+    const nicknames = nicknameMap();
+    const nicknameEntries = Object.entries(nicknames);
     const enabledCount = enabled.length + custom.length;
-    badge.textContent = `iNat filter: ${filteredCount()}/${totalCardCount()} matched; ${highlightedCount()} highlighted; ${enabledCount} filter(s); ${currentMode()}`;
+    badge.textContent = `iNat filter: ${filteredCount()}/${totalCardCount()} matched; ${highlightedCount()} highlighted; ${enabledCount} filter(s); ${nicknameEntries.length} nickname(s); ${currentMode()}`;
     badge.title = [
       ...enabled,
       ...custom.map(pattern => `Custom regex: ${pattern}`),
-      ...highlight.map(pattern => `Highlight regex: ${pattern}`)
-    ].join("\n") || "No filters enabled. Edit the userscript FILTERS list or set a custom/highlight regex.";
+      ...highlight.map(pattern => `Highlight regex: ${pattern}`),
+      ...nicknameEntries.map(([nickname, username]) => `Nickname: ${nickname} = ${username}`)
+    ].join("\n") || "No filters or nicknames enabled. Edit the userscript FILTERS list or set a custom/highlight regex/nickname.";
   }
 
   function scheduleBadgeUpdate() {
@@ -577,7 +637,8 @@
     const MENU_HEADER_SUFFIX_DASHES = {
       "Hide/Highlight by regex": 6,
       "Built-in filters": 10,
-      "Dimming modes": 9
+      "Dimming modes": 9,
+      "Nicknames": 13
     };
     function menuHeader(label) {
       if (!label) return "─".repeat(MENU_HEADER_LINE_DASHES);
@@ -592,9 +653,11 @@
       const builtIn = FILTERS.filter(isFilterEnabled).map(f => `• ${f.menuLabel || f.name}`);
       const dimming = customRegexPatterns();
       const highlighting = highlightRegexPatterns();
+      const nicknames = Object.entries(nicknameMap());
       const dimmingText = dimming.length ? dimming.map(pattern => `• ${pattern}`).join("\n") : "None";
       const highlightingText = highlighting.length ? highlighting.map(pattern => `• ${pattern}`).join("\n") : "None";
-      alert(`Built-in filters:\n${builtIn.join("\n") || "None"}\n\nDimming regexes:\n${dimmingText}\n\nHighlighting regexes:\n${highlightingText}\n\nMatched cards: ${filteredCount()}/${totalCardCount()}\nHighlighted cards: ${highlightedCount()}/${totalCardCount()}\nDimming mode: ${currentMode()}`);
+      const nicknameText = nicknames.length ? nicknames.map(([nickname, username]) => `• ${nickname} = ${username}`).join("\n") : "None";
+      alert(`Built-in filters:\n${builtIn.join("\n") || "None"}\n\nDimming regexes:\n${dimmingText}\n\nHighlighting regexes:\n${highlightingText}\n\nNicknames:\n${nicknameText}\n\nMatched cards: ${filteredCount()}/${totalCardCount()}\nHighlighted cards: ${highlightedCount()}/${totalCardCount()}\nDimming mode: ${currentMode()}`);
     });
     registerMenuHeader("Hide/Highlight by regex");
     GM_registerMenuCommand("Show current regexes", () => {
@@ -656,6 +719,47 @@
       resetHighlightedCards();
       updateBadge();
       alert("All highlighting regexes cleared.");
+    });
+    registerMenuHeader("Nicknames");
+    GM_registerMenuCommand("Show current nicknames", () => {
+      const lines = nicknameMapLines();
+      alert(`Nicknames:\n${lines || "None"}\n\nThese are saved mappings only. They do not change page behavior yet.`);
+    });
+    GM_registerMenuCommand("Add new: Nickname", () => {
+      const input = prompt(
+        "Enter one nickname mapping as nickname=username.\n\nExample:\nTom=tbsisan\n\nThis adds or replaces one nickname. It does not change page behavior yet. Leave blank to cancel.",
+        ""
+      );
+      if (input === null) return;
+      const trimmed = input.trim();
+      if (!trimmed) return;
+      try {
+        const [nickname, username] = parseSingleNicknameLine(trimmed);
+        addNickname(nickname, username);
+        updateBadge();
+        alert(`Nickname saved:\n${nickname} = ${username}\n\nThis mapping is stored for future nickname behavior; it does not change the page yet.`);
+      } catch (err) {
+        alert(`Invalid nickname mapping:\n${err.message}`);
+      }
+    });
+    GM_registerMenuCommand("Edit all nicknames", () => {
+      const input = prompt(
+        "Edit nickname mappings, one per line, as nickname=username.\n\nExample:\nTom=tbsisan\nPenny=pennyinat\n\nThese mappings are stored only; they do not change page behavior yet.",
+        nicknameMapLines()
+      );
+      if (input === null) return;
+      try {
+        setNicknameMap(parseNicknameMapLines(input));
+        updateBadge();
+        alert("Nicknames saved. These mappings are stored for future nickname behavior; they do not change the page yet.");
+      } catch (err) {
+        alert(`Invalid nickname mappings:\n${err.message}`);
+      }
+    });
+    GM_registerMenuCommand("Clear all nicknames", () => {
+      clearNicknames();
+      updateBadge();
+      alert("All nicknames cleared.");
     });
     registerMenuHeader("Built-in filters");
     for (const filter of FILTERS) {
@@ -748,7 +852,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.7.11");
+    log("starting v0.8.1");
     registerMenus();
 
     waitForCardsAndApply();
