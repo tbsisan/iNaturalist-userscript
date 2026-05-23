@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.4
+// @version      0.10.5
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -325,7 +325,7 @@
 
     const firstParagraph = notesContent.querySelector("p") || notesContent;
     const htmlContent = firstParagraph.innerHTML.trim().replaceAll("<br>", "\n");
-    const strictHtmlMatch = htmlContent.match(/^\s*(?:[Oo]n|[Hh]ost):?\s+<(em|i)>\s*([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×)\s+)?[a-zA-Z-]+)\s*<\/\1>/);
+    const strictHtmlMatch = htmlContent.match(/^\s*(?:[Oo]n|[Hh]ost):?\s+<(em|i)>\s*([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×|x)\s+)?[a-zA-Z-]+)\s*<\/\1>/);
     if (strictHtmlMatch) {
       const speciesName = strictHtmlMatch[2].trim();
       log(`host plant: matched italic Notes host species: ${speciesName}`);
@@ -333,7 +333,7 @@
     }
 
     const textContent = normalizeText(firstParagraph.textContent);
-    const textMatch = textContent.match(/^\s*(?:on|host):?\s+([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×)\s+)?[a-zA-Z-]+)/i);
+    const textMatch = textContent.match(/^\s*(?:on|host):?\s+([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×|x)\s+)?[a-zA-Z-]+)/i);
     if (textMatch) {
       const speciesName = textMatch[1].trim();
       log(`host plant: matched text Notes host species: ${speciesName}`);
@@ -348,11 +348,18 @@
     return String(speciesName || "").replace(/×/g, "x");
   }
 
+  function hostTaxonMultiplicationName(speciesName) {
+    return String(speciesName || "").replace(/(\s)x(\s)/g, "$1×$2");
+  }
+
   function hostTaxonLabelMatches(labelText, speciesName) {
     const label = normalizeText(labelText);
-    const notesName = normalizeText(speciesName);
-    const searchName = normalizeText(hostTaxonSearchName(speciesName));
-    return label.includes(notesName) || label.includes(searchName);
+    const candidateNames = [
+      speciesName,
+      hostTaxonSearchName(speciesName),
+      hostTaxonMultiplicationName(speciesName),
+    ].map(name => normalizeText(name)).filter(Boolean);
+    return candidateNames.some(name => label.includes(name));
   }
 
   function installHostPlantButton() {
@@ -1184,7 +1191,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.4");
+    log("starting v0.10.5");
     registerMenus();
 
     if (isObservationPage()) {
