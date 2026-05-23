@@ -30,4 +30,5 @@ MIT. See [LICENSE](LICENSE).
 - Provides userscript-manager menu controls for status, regex lists, nickname mappings, built-in filters, and dimming modes.
 - Saves nickname mappings as `nickname=@username` pairs, including comma-separated username lists.
 - Expands saved nicknames into full `@username` mentions when typing comments on observation pages.
+- Detects host plants in observation Notes like `on Parthenocissus inserta` and adds a button to fill host observation fields.
 - Handles dynamically loaded dashboard update cards.

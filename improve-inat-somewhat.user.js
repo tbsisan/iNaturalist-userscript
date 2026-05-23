@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.9.0
+// @version      0.10.0
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -15,6 +15,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -73,6 +74,8 @@
   const HIGHLIGHT_REASON_ATTR = "data-hermes-inat-highlight-reason";
   const STYLE_ID = "hermes-inat-filter-style";
   const BADGE_ID = "hermes-inat-filter-badge";
+  const HOST_PLANT_BUTTON_ID = "hermes-inat-fill-host-plant-fields";
+  const HOST_PLANT_FIELD_NAMES = ["Host", "Host plant", "Host Plant ID"];
 
   let badgeUpdateTimer = null;
 
@@ -280,6 +283,211 @@
 
   function isDashboardPage() {
     return /^\/(home|users\/dashboard_updates)(?:$|[/?#])/.test(window.location.pathname + window.location.search + window.location.hash);
+  }
+
+  function pageJQuery() {
+    const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    return pageWindow && pageWindow.$ ? pageWindow.$ : window.$;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
+  }
+
+  async function waitFor(description, predicate, { interval = 100, timeout = 5000 } = {}) {
+    const deadline = Date.now() + timeout;
+    let attempts = 0;
+    while (Date.now() <= deadline) {
+      attempts += 1;
+      const result = predicate();
+      if (result) {
+        log(`waitFor ${description}: found after ${attempts} attempt(s)`);
+        return result;
+      }
+      await sleep(interval);
+    }
+    throw new Error(`Timed out waiting for ${description}`);
+  }
+
+  function findNotesContentElement() {
+    const notesHeading = Array.from(document.querySelectorAll("h3"))
+      .find(heading => normalizeText(heading.textContent).toLowerCase() === "notes");
+    const notesSection = notesHeading ? notesHeading.closest(".row, section, div") : null;
+    return (notesSection && notesSection.querySelector(".UserText .content")) || document.querySelector(".UserText .content");
+  }
+
+  function hostSpeciesFromNotes() {
+    const notesContent = findNotesContentElement();
+    if (!notesContent) {
+      log("host plant: Notes content not found");
+      return null;
+    }
+
+    const firstParagraph = notesContent.querySelector("p") || notesContent;
+    const htmlContent = firstParagraph.innerHTML.trim().replaceAll("<br>", "\n");
+    const strictHtmlMatch = htmlContent.match(/^\s*(?:[Oo]n|[Hh]ost):?\s+<(em|i)>\s*([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×)\s+)?[a-zA-Z-]+)\s*<\/\1>/);
+    if (strictHtmlMatch) {
+      const speciesName = strictHtmlMatch[2].trim();
+      log(`host plant: matched italic Notes host species: ${speciesName}`);
+      return { speciesName, notesContent };
+    }
+
+    const textContent = normalizeText(firstParagraph.textContent);
+    const textMatch = textContent.match(/^\s*(?:on|host):?\s+([a-zA-Z.-]+\s+(?:(?:cf\.?|aff\.?|×)\s+)?[a-zA-Z-]+)/i);
+    if (textMatch) {
+      const speciesName = textMatch[1].trim();
+      log(`host plant: matched text Notes host species: ${speciesName}`);
+      return { speciesName, notesContent };
+    }
+
+    log("host plant: Notes did not match host pattern", { htmlContent, textContent });
+    return null;
+  }
+
+  function installHostPlantButton() {
+    if (!isObservationPage()) return false;
+    if (document.getElementById(HOST_PLANT_BUTTON_ID)) return true;
+
+    const host = hostSpeciesFromNotes();
+    if (!host) return false;
+
+    const button = document.createElement("button");
+    button.id = HOST_PLANT_BUTTON_ID;
+    button.type = "button";
+    button.className = "btn btn-default btn-xs";
+    button.textContent = `Fill host fields: ${host.speciesName}`;
+    button.style.marginTop = "8px";
+    button.style.display = "inline-block";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      const originalText = button.textContent;
+      button.textContent = `Filling host fields: ${host.speciesName}…`;
+      try {
+        await fillHostPlantObservationFields(host.speciesName);
+        button.textContent = `Host fields filled: ${host.speciesName}`;
+      } catch (err) {
+        console.error("[iNat filter] host plant: failed to fill observation fields", err);
+        button.disabled = false;
+        button.textContent = originalText;
+        alert(`Could not fill host plant fields for ${host.speciesName}:\n${err.message}`);
+      }
+    });
+
+    host.notesContent.insertAdjacentElement("afterend", button);
+    log(`host plant: added fill button for ${host.speciesName}`);
+    return true;
+  }
+
+  function installHostPlantButtonWhenReady() {
+    if (installHostPlantButton()) return;
+    const observer = new MutationObserver(() => {
+      if (!installHostPlantButton()) return;
+      observer.disconnect();
+    });
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(() => observer.disconnect(), 10000);
+  }
+
+  function autocompleteSearch($input, searchText) {
+    const page$ = pageJQuery();
+    $input.focus();
+    $input.val(searchText);
+    $input.trigger("input").trigger("keydown").trigger("keyup");
+    if (typeof $input.autocomplete === "function") {
+      try {
+        $input.autocomplete("search", searchText);
+      } catch (err) {
+        log("host plant: autocomplete search call failed; continuing with input events", err);
+      }
+    }
+    page$(document).trigger("mousemove");
+  }
+
+  function clickAutocompleteChoice($choice) {
+    $choice.trigger("mouseenter")
+      .trigger("mouseover")
+      .trigger("mousedown")
+      .trigger("mouseup")
+      .trigger("click");
+  }
+
+  function visibleTaxonInputs() {
+    const page$ = pageJQuery();
+    return page$('input[name="taxon_name"][placeholder="Species name"]')
+      .filter(function () { return page$(this).is(":visible"); });
+  }
+
+  async function chooseObservationField(fieldName) {
+    const page$ = pageJQuery();
+    if (!page$) throw new Error("Page jQuery is not available");
+
+    const $fieldInput = page$('input[placeholder="Choose a field"]').first();
+    if (!$fieldInput.length) throw new Error("Could not find the observation field chooser input");
+
+    log(`host plant: choosing observation field ${fieldName}`);
+    autocompleteSearch($fieldInput, fieldName);
+
+    const $choice = await waitFor(`observation field option ${fieldName}`, () => {
+      const matches = page$("ul.ui-autocomplete.open li.ui-menu-item div.ac").filter(function () {
+        return normalizeText(page$(this).find(".ac-label .title").first().text()) === fieldName;
+      });
+      return matches.length ? matches.first() : null;
+    });
+
+    const beforeTaxonInputCount = visibleTaxonInputs().length;
+    clickAutocompleteChoice($choice);
+    log(`host plant: clicked observation field ${fieldName}`);
+    await sleep(250);
+
+    return { beforeTaxonInputCount };
+  }
+
+  async function chooseTaxonForNewestField(speciesName, beforeTaxonInputCount) {
+    const page$ = pageJQuery();
+    const $taxonInput = await waitFor("host species taxon input", () => {
+      const $inputs = visibleTaxonInputs();
+      if ($inputs.length > beforeTaxonInputCount) return $inputs.last();
+      return $inputs.length ? $inputs.last() : null;
+    });
+
+    log(`host plant: entering species ${speciesName}`);
+    autocompleteSearch($taxonInput, speciesName);
+
+    const $taxonChoice = await waitFor(`taxon dropdown result ${speciesName}`, () => {
+      const exactMatches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
+        const subtitle = normalizeText(page$(this).find(".ac-label .subtitle").first().text());
+        return subtitle === speciesName;
+      });
+      if (exactMatches.length) return exactMatches.first();
+
+      const containsMatches = page$(".ui-autocomplete div[data-taxon-id]").filter(function () {
+        const subtitle = normalizeText(page$(this).find(".ac-label .subtitle").first().text());
+        return subtitle.includes(speciesName);
+      });
+      return containsMatches.length ? containsMatches.first() : null;
+    }, { timeout: 7000 });
+
+    const taxonId = $taxonChoice.attr("data-taxon-id") || "unknown taxon id";
+    clickAutocompleteChoice($taxonChoice);
+    log(`host plant: selected ${speciesName} (${taxonId})`);
+    await sleep(350);
+    return taxonId;
+  }
+
+  async function fillHostPlantObservationFields(speciesName) {
+    const page$ = pageJQuery();
+    if (!page$) throw new Error("Page jQuery is not available");
+
+    log(`host plant: filling observation fields for ${speciesName}`, HOST_PLANT_FIELD_NAMES);
+    const results = [];
+    for (const fieldName of HOST_PLANT_FIELD_NAMES) {
+      const { beforeTaxonInputCount } = await chooseObservationField(fieldName);
+      const taxonId = await chooseTaxonForNewestField(speciesName, beforeTaxonInputCount);
+      results.push(`${fieldName}: ${taxonId}`);
+    }
+    log(`host plant: finished filling fields for ${speciesName}`, results);
+    alert(`Filled host plant observation fields for ${speciesName}:\n${results.join("\n")}`);
+    return results;
   }
 
   function regexFromUserInput(input) {
@@ -914,12 +1122,13 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.9.0");
+    log("starting v0.10.0");
     registerMenus();
 
     if (isObservationPage()) {
       document.addEventListener("keydown", expandNicknameBeforeSpace, true);
-      log("observation nickname expansion enabled");
+      installHostPlantButtonWhenReady();
+      log("observation page helpers enabled");
     }
 
     if (!isDashboardPage()) return;
