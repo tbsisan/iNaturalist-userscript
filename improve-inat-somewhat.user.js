@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.9
+// @version      0.11.0
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -75,6 +75,7 @@
   const STYLE_ID = "hermes-inat-filter-style";
   const BADGE_ID = "hermes-inat-filter-badge";
   const HOST_PLANT_BUTTON_ID = "hermes-inat-fill-host-plant-fields";
+  const PROJECT_GROUP_CONTROLS_ID = "hermes-inat-project-group-controls";
   const HOST_FIELD_NAME = "Host";
   const HOST_PLANT_FIELD_NAMES = [HOST_FIELD_NAME, "Host plant", "Host Plant ID"];
   const INAT_TAXA_API_URL = "https://api.inaturalist.org/v1/taxa";
@@ -204,6 +205,73 @@
 
   function clearNicknames() {
     setNicknameMap({});
+  }
+
+  function projectGroups() {
+    const saved = gmGet("projectGroups", {});
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return projectGroupsFromObject(saved);
+  }
+
+  function setProjectGroups(groups) {
+    gmSet("projectGroups", projectGroupsFromObject(groups));
+  }
+
+  function projectGroupsFromObject(source) {
+    const cleaned = {};
+    for (const [groupName, projects] of Object.entries(source || {})) {
+      const cleanGroupName = String(groupName || "").trim();
+      const cleanProjects = normalizeProjectList(Array.isArray(projects) ? projects : String(projects || "").split(","));
+      if (cleanGroupName && cleanProjects.length) cleaned[cleanGroupName] = cleanProjects;
+    }
+    return cleaned;
+  }
+
+  function normalizeProjectList(projects) {
+    const seen = new Set();
+    const normalized = [];
+    for (const project of projects || []) {
+      const name = normalizeText(String(project || ""));
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(name);
+    }
+    return normalized;
+  }
+
+  function projectGroupLines(groups = projectGroups()) {
+    return Object.entries(groups)
+      .map(([groupName, projects]) => `${groupName}=${projects.join(", ")}`)
+      .join("\n");
+  }
+
+  function parseProjectGroupLines(input) {
+    const parsed = {};
+    for (const rawLine of String(input || "").split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const equals = line.indexOf("=");
+      if (equals <= 0) throw new Error(`Use group=Project One, Project Two. Invalid line: ${line}`);
+      const groupName = line.slice(0, equals).trim();
+      const projects = normalizeProjectList(line.slice(equals + 1).split(","));
+      if (!groupName) throw new Error(`Missing group name in line: ${line}`);
+      if (!projects.length) throw new Error(`Missing project list for group: ${groupName}`);
+      parsed[groupName] = projects;
+    }
+    return parsed;
+  }
+
+  function setProjectGroup(groupName, projects) {
+    const name = String(groupName || "").trim();
+    const cleanProjects = normalizeProjectList(projects);
+    if (!name) throw new Error("Project group name is required");
+    if (!cleanProjects.length) throw new Error("No projects found for this group");
+    setProjectGroups({ ...projectGroups(), [name]: cleanProjects });
+  }
+
+  function clearProjectGroups() {
+    setProjectGroups({});
   }
 
   function nicknameMapLines(nicknames = nicknameMap()) {
@@ -458,6 +526,187 @@
         lookupFailed: true
       };
     }
+  }
+
+  function currentObservationProjectNames() {
+    const links = Array.from(document.querySelectorAll("#projects-panel .projectEntry .title a, #projects-panel .project .info .title a, .Projects .projectEntry .title a, .Projects .project .info .title a"));
+    return normalizeProjectList(links.map(link => link.textContent));
+  }
+
+  function projectInput() {
+    return document.querySelector('input[placeholder="Add to a Project"]');
+  }
+
+  function visibleProjectModal() {
+    return Array.from(document.querySelectorAll(".ProjectFieldsModal.in, .ProjectFieldsModal[style*='display: block']"))
+      .find(modal => modal.offsetParent !== null || modal.getBoundingClientRect().width > 0);
+  }
+
+  function projectAlreadyOnPage(projectName) {
+    const wanted = normalizeText(projectName).toLowerCase();
+    return currentObservationProjectNames().some(name => name.toLowerCase() === wanted);
+  }
+
+  function promptForProjectGroupName(actionLabel = "project group") {
+    const groups = Object.keys(projectGroups());
+    const input = prompt(
+      `${actionLabel} name${groups.length ? `\n\nExisting groups:\n${groups.map(name => `• ${name}`).join("\n")}` : ""}`,
+      groups[0] || ""
+    );
+    if (input === null) return null;
+    return input.trim();
+  }
+
+  function createProjectGroupFromPage() {
+    if (!isObservationPage()) {
+      alert("Project groups can only be created from an observation page.");
+      return;
+    }
+    const projects = currentObservationProjectNames();
+    if (!projects.length) {
+      alert("No current observation projects were found on this page.");
+      return;
+    }
+    const groupName = prompt(
+      `Save the ${projects.length} project(s) currently on this observation as which project group?\n\n${projects.map(name => `• ${name}`).join("\n")}`,
+      ""
+    );
+    if (groupName === null) return;
+    try {
+      setProjectGroup(groupName, projects);
+      updateBadge();
+      alert(`Project group saved: ${groupName.trim()}\n\n${projects.join(", ")}`);
+    } catch (err) {
+      alert(`Could not save project group:\n${err.message}`);
+    }
+  }
+
+  function projectAutocompleteChoices(page$) {
+    return page$("ul.ui-autocomplete.projects:visible li.ui-menu-item div.ac, ul.ui-autocomplete.projects.open li.ui-menu-item div.ac, ul.ui-autocomplete:visible li.ui-menu-item div.ac").filter(function () {
+      return page$(this).find(".ac-label .title").length > 0;
+    });
+  }
+
+  function projectChoiceMatches(page$, choice, projectName) {
+    const wanted = normalizeText(projectName).toLowerCase();
+    const title = normalizeText(page$(choice).find(".ac-label .title").first().text()).toLowerCase();
+    const label = normalizeText(page$(choice).find(".ac-label").first().text()).toLowerCase();
+    return title === wanted || label === wanted;
+  }
+
+  async function waitForProjectModalToClose(projectName) {
+    if (!visibleProjectModal()) return;
+    alert(`The project "${projectName}" needs extra information. Fill out the modal and click Add to Project; this script will continue after the modal closes.`);
+    await waitFor(`project fields modal for ${projectName} to close`, () => !visibleProjectModal(), { timeout: 300000, interval: 500 });
+  }
+
+  async function addObservationToProject(projectName) {
+    const cleanProjectName = normalizeText(projectName);
+    if (!cleanProjectName) return "skipped blank project";
+    if (projectAlreadyOnPage(cleanProjectName)) {
+      log(`project group: ${cleanProjectName} is already on page; skipping`);
+      return `already present: ${cleanProjectName}`;
+    }
+
+    const page$ = pageJQuery();
+    if (!page$) throw new Error("Page jQuery is not available");
+    const input = projectInput();
+    if (!input) throw new Error('Could not find the "Add to a Project" input');
+    const $input = page$(input);
+    log(`project group: adding ${cleanProjectName}`);
+    autocompleteSearch($input, cleanProjectName);
+
+    const $choice = await waitFor(`project autocomplete option ${cleanProjectName}`, () => {
+      const matches = projectAutocompleteChoices(page$).filter(function () {
+        return projectChoiceMatches(page$, this, cleanProjectName);
+      });
+      return matches.length ? matches.first() : null;
+    }, { timeout: 8000 });
+
+    clickAutocompleteChoice($choice);
+    const firstOutcome = await waitFor(`project ${cleanProjectName} to be added or request extra fields`, () => {
+      if (projectAlreadyOnPage(cleanProjectName)) return "added";
+      if (visibleProjectModal()) return "modal";
+      return null;
+    }, { timeout: 8000, interval: 250 });
+    if (firstOutcome === "modal") {
+      await waitForProjectModalToClose(cleanProjectName);
+      await waitFor(`project ${cleanProjectName} to appear`, () => projectAlreadyOnPage(cleanProjectName), { timeout: 15000, interval: 300 });
+    }
+
+    return `added: ${cleanProjectName}`;
+  }
+
+  async function addProjectGroupToPage(groupName = null) {
+    if (!isObservationPage()) {
+      alert("Project groups can only be added from an observation page.");
+      return;
+    }
+    const groups = projectGroups();
+    const names = Object.keys(groups);
+    if (!names.length) {
+      alert("No project groups are saved yet. Use Create project group from page first.");
+      return;
+    }
+    const chosenName = groupName || promptForProjectGroupName("Add which project group");
+    if (!chosenName) return;
+    const projects = groups[chosenName];
+    if (!projects) {
+      alert(`No saved project group named "${chosenName}".\n\nSaved groups:\n${names.join("\n")}`);
+      return;
+    }
+
+    const results = [];
+    try {
+      for (const projectName of projects) {
+        results.push(await addObservationToProject(projectName));
+      }
+      alert(`Project group complete: ${chosenName}\n\n${results.join("\n")}`);
+    } catch (err) {
+      alert(`Stopped while adding project group "${chosenName}":\n${err.message}\n\nProgress:\n${results.join("\n") || "None"}`);
+    }
+  }
+
+  function installProjectGroupControls() {
+    if (!isObservationPage()) return false;
+    if (document.getElementById(PROJECT_GROUP_CONTROLS_ID)) return true;
+    const input = projectInput();
+    if (!input) return false;
+    const container = document.createElement("div");
+    container.id = PROJECT_GROUP_CONTROLS_ID;
+    container.style.marginTop = "8px";
+    container.style.display = "flex";
+    container.style.gap = "6px";
+    container.style.flexWrap = "wrap";
+
+    const makeButton = document.createElement("button");
+    makeButton.type = "button";
+    makeButton.className = "btn btn-default btn-xs";
+    makeButton.textContent = "Save project group";
+    makeButton.title = "Save all projects currently on this observation as a named group";
+    makeButton.addEventListener("click", createProjectGroupFromPage);
+
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "btn btn-default btn-xs";
+    addButton.textContent = "Add project group";
+    addButton.title = "Add a saved project group to this observation";
+    addButton.addEventListener("click", () => { addProjectGroupToPage(); });
+
+    container.append(makeButton, addButton);
+    input.closest("form, .form-group, .ac-chooser")?.insertAdjacentElement("afterend", container);
+    log("project group: added controls");
+    return true;
+  }
+
+  function installProjectGroupControlsWhenReady() {
+    if (installProjectGroupControls()) return;
+    const observer = new MutationObserver(() => {
+      if (!installProjectGroupControls()) return;
+      observer.disconnect();
+    });
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(() => observer.disconnect(), 10000);
   }
 
   function installHostPlantButton() {
@@ -1058,13 +1307,15 @@
     const highlight = highlightRegexPatterns();
     const nicknames = nicknameMap();
     const nicknameEntries = Object.entries(nicknames);
+    const groupEntries = Object.entries(projectGroups());
     const enabledCount = enabled.length + custom.length;
-    badge.textContent = `iNat filter: ${filteredCount()}/${totalCardCount()} matched; ${highlightedCount()} highlighted; ${enabledCount} filter(s); ${nicknameEntries.length} nickname(s); ${currentMode()}`;
+    badge.textContent = `iNat filter: ${filteredCount()}/${totalCardCount()} matched; ${highlightedCount()} highlighted; ${enabledCount} filter(s); ${nicknameEntries.length} nickname(s); ${groupEntries.length} project group(s); ${currentMode()}`;
     badge.title = [
       ...enabled,
       ...custom.map(pattern => `Custom regex: ${pattern}`),
       ...highlight.map(pattern => `Highlight regex: ${pattern}`),
-      ...nicknameEntries.map(([nickname, username]) => `Nickname: ${nickname} = ${username}`)
+      ...nicknameEntries.map(([nickname, username]) => `Nickname: ${nickname} = ${username}`),
+      ...groupEntries.map(([groupName, projects]) => `Project group: ${groupName} = ${projects.join(", ")}`)
     ].join("\n") || "No filters or nicknames enabled. Edit the userscript FILTERS list or set a custom/highlight regex/nickname.";
   }
 
@@ -1084,7 +1335,8 @@
       "Hide/Highlight by regex": 6,
       "Built-in filters": 10,
       "Dimming modes": 9,
-      "Nicknames": 13
+      "Nicknames": 13,
+      "Project groups": 8
     };
     function menuHeader(label) {
       if (!label) return "─".repeat(MENU_HEADER_LINE_DASHES);
@@ -1100,10 +1352,12 @@
       const dimming = customRegexPatterns();
       const highlighting = highlightRegexPatterns();
       const nicknames = Object.entries(nicknameMap());
+      const groups = Object.entries(projectGroups());
       const dimmingText = dimming.length ? dimming.map(pattern => `• ${pattern}`).join("\n") : "None";
       const highlightingText = highlighting.length ? highlighting.map(pattern => `• ${pattern}`).join("\n") : "None";
       const nicknameText = nicknames.length ? nicknames.map(([nickname, username]) => `• ${nickname} = ${username}`).join("\n") : "None";
-      alert(`Built-in filters:\n${builtIn.join("\n") || "None"}\n\nDimming regexes:\n${dimmingText}\n\nHighlighting regexes:\n${highlightingText}\n\nNicknames:\n${nicknameText}\n\nMatched cards: ${filteredCount()}/${totalCardCount()}\nHighlighted cards: ${highlightedCount()}/${totalCardCount()}\nDimming mode: ${currentMode()}`);
+      const groupText = groups.length ? groups.map(([groupName, projects]) => `• ${groupName} = ${projects.join(", ")}`).join("\n") : "None";
+      alert(`Built-in filters:\n${builtIn.join("\n") || "None"}\n\nDimming regexes:\n${dimmingText}\n\nHighlighting regexes:\n${highlightingText}\n\nNicknames:\n${nicknameText}\n\nProject groups:\n${groupText}\n\nMatched cards: ${filteredCount()}/${totalCardCount()}\nHighlighted cards: ${highlightedCount()}/${totalCardCount()}\nDimming mode: ${currentMode()}`);
     });
     registerMenuHeader("Hide/Highlight by regex");
     GM_registerMenuCommand("Show current regexes", () => {
@@ -1207,6 +1461,32 @@
       updateBadge();
       alert("All nicknames cleared.");
     });
+    registerMenuHeader("Project groups");
+    GM_registerMenuCommand("Create from current page", createProjectGroupFromPage);
+    GM_registerMenuCommand("Add group to current page", () => { addProjectGroupToPage(); });
+    GM_registerMenuCommand("Show current project groups", () => {
+      const lines = projectGroupLines();
+      alert(`Project groups:\n${lines || "None"}\n\nOn observation pages, use Add project group to add each saved project to the current observation. Keyboard shortcuts: Ctrl-M Ctrl-P saves the current page's projects as a group; Ctrl-A Ctrl-P adds a saved group.`);
+    });
+    GM_registerMenuCommand("Edit all project groups", () => {
+      const input = prompt(
+        "Edit project groups, one per line, as group=Project One, Project Two.\n\nThese project names must match iNaturalist's project autocomplete labels.",
+        projectGroupLines()
+      );
+      if (input === null) return;
+      try {
+        setProjectGroups(parseProjectGroupLines(input));
+        updateBadge();
+        alert("Project groups saved.");
+      } catch (err) {
+        alert(`Invalid project groups:\n${err.message}`);
+      }
+    });
+    GM_registerMenuCommand("Clear all project groups", () => {
+      clearProjectGroups();
+      updateBadge();
+      alert("All project groups cleared.");
+    });
     registerMenuHeader("Built-in filters");
     for (const filter of FILTERS) {
       const enabled = isFilterEnabled(filter);
@@ -1288,6 +1568,36 @@
     }, 15000);
   }
 
+  let projectGroupShortcutPrefix = null;
+  let projectGroupShortcutTimer = null;
+
+  function isEditableShortcutTarget(element) {
+    if (!element || !(element instanceof Element)) return false;
+    return Boolean(element.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));
+  }
+
+  function handleProjectGroupShortcut(event) {
+    if (!isObservationPage()) return;
+    if (isEditableShortcutTarget(event.target)) return;
+    const key = String(event.key || "").toLowerCase();
+    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (!projectGroupShortcutPrefix && (key === "m" || key === "a")) {
+      projectGroupShortcutPrefix = key;
+      window.clearTimeout(projectGroupShortcutTimer);
+      projectGroupShortcutTimer = window.setTimeout(() => { projectGroupShortcutPrefix = null; }, 1500);
+      event.preventDefault();
+      return;
+    }
+    if (projectGroupShortcutPrefix && key === "p") {
+      const prefix = projectGroupShortcutPrefix;
+      projectGroupShortcutPrefix = null;
+      window.clearTimeout(projectGroupShortcutTimer);
+      event.preventDefault();
+      if (prefix === "m") createProjectGroupFromPage();
+      if (prefix === "a") addProjectGroupToPage();
+    }
+  }
+
   function scrollToPageTop() {
     try {
       window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -1298,12 +1608,14 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.9");
+    log("starting v0.11.0");
     registerMenus();
 
     if (isObservationPage()) {
       document.addEventListener("keydown", expandNicknameBeforeSpace, true);
+      document.addEventListener("keydown", handleProjectGroupShortcut, true);
       installHostPlantButtonWhenReady();
+      installProjectGroupControlsWhenReady();
       log("observation page helpers enabled");
     }
 

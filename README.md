@@ -1,6 +1,6 @@
 # Improve iNat Somewhat
 
-A userscript for making iNaturalist easier to skim and annotate. It improves the dashboard update feed with filtering/highlighting controls, adds nickname expansion in observation comments, and adds observation-page helpers for filling host-plant observation fields from the Notes section.
+A userscript for making iNaturalist easier to skim and annotate. It improves the dashboard update feed with filtering/highlighting controls, adds nickname expansion in observation comments, adds project-group helpers for observation pages, and adds observation-page helpers for filling host-plant observation fields from the Notes section.
 
 ## Install
 
@@ -47,6 +47,7 @@ The script adds Tampermonkey/Greasemonkey/Violentmonkey menu commands for:
 - adding highlighting regexes
 - clearing all highlighting regexes
 - adding, showing, editing, and clearing nickname mappings
+- creating, adding, showing, editing, and clearing project groups
 - toggling built-in filters
 - choosing the dimming mode
 - rerunning filters
@@ -84,6 +85,21 @@ expands to:
 ```text
 @sbrobeson, @carnifex␠
 ```
+
+### Project groups for observation pages
+
+On observation pages, saved project groups can be used to add the observation to the same set of projects later.
+
+- Adds small buttons near the “Add to a Project” input:
+  - `Save project group` — saves all projects currently listed on the observation as a named group.
+  - `Add project group` — prompts for a saved group name and adds each project in that group to the observation.
+- Project groups are saved as `group=Project One, Project Two` lists and can be shown/edited/cleared from the userscript-manager menu.
+- Keyboard shortcuts are available when focus is not inside an input/textarea:
+  - `Ctrl-M`, then `Ctrl-P` — make/save a project group from the current observation page.
+  - `Ctrl-A`, then `Ctrl-P` — add a saved project group to the current observation page.
+- When adding a group, projects already present on the observation are skipped.
+- If a project opens iNaturalist’s required-fields modal, the script pauses and asks you to fill out the modal and click `Add to Project`; after the modal closes, it continues with the remaining projects.
+- Project adding uses iNaturalist’s own “Add to a Project” autocomplete and clicks the matching project title.
 
 ### Observation host-plant field helper
 
