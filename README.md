@@ -105,11 +105,20 @@ on <em>Parthenocissus inserta</em>
 - Adds a button near Notes:
 
 ```text
-Fill host fields: <taxon>
+Fill host field(s): <taxon>
 ```
 
-- When clicked, it uses iNaturalist’s own jQuery/autocomplete UI to fill host-related observation fields.
-- Before filling, it checks the candidate host taxon against the iNaturalist v1 `/taxa` API.
+- As soon as the button is added, it starts a background iNaturalist v1 `/taxa` API lookup for the candidate host taxon.
+- When that lookup returns, the button label is updated with the host's iconic taxon, for example:
+
+```text
+Fill host plant field(s): Parthenocissus inserta
+Fill host fungi field(s): Boletus something
+Fill host insect field(s): Danaus plexippus
+```
+
+- When clicked, it reuses that completed/in-flight lookup and then uses iNaturalist’s own jQuery/autocomplete UI to fill host-related observation fields.
+- The lookup checks the candidate host taxon against the iNaturalist v1 `/taxa` API.
   - If the first taxa result has `iconic_taxon_name: "Plantae"`, it fills all host-plant fields.
   - If the candidate host is not Plantae, or if the lookup fails, it only fills the generic `Host` field.
 - For plant hosts, it fills these observation fields in order:

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Improve iNat Somewhat
 // @namespace    https://www.inaturalist.org/
-// @version      0.10.8
+// @version      0.10.9
 // @description  Filter and highlight iNaturalist dashboard update cards.
 // @author       Tom + Hermes
 // @license      MIT
@@ -411,15 +411,52 @@
     return { query, taxonName, iconicTaxonName };
   }
 
-  async function hostObservationFieldNamesForTaxon(speciesName) {
+  function hostIconicTaxonLabel(iconicTaxonName) {
+    const labels = {
+      Actinopterygii: "fish",
+      Amphibia: "amphibian",
+      Animalia: "animal",
+      Arachnida: "arachnid",
+      Aves: "bird",
+      Chromista: "chromist",
+      Fungi: "fungi",
+      Insecta: "insect",
+      Mammalia: "mammal",
+      Mollusca: "mollusk",
+      Plantae: "plant",
+      Protozoa: "protozoan",
+      Reptilia: "reptile"
+    };
+    return labels[iconicTaxonName] || String(iconicTaxonName || "").toLowerCase();
+  }
+
+  function hostFieldButtonText(speciesName, taxonPlan, action = "Fill") {
+    const iconicLabel = taxonPlan && taxonPlan.iconicTaxonName ? hostIconicTaxonLabel(taxonPlan.iconicTaxonName) : "";
+    const hostType = iconicLabel ? `host ${iconicLabel}` : "host";
+    return `${action} ${hostType} field(s): ${speciesName}`;
+  }
+
+  function hostFieldDescription(speciesName, taxonPlan) {
+    return hostFieldButtonText(speciesName, taxonPlan).replace(/^Fill\s+/, "");
+  }
+
+  async function hostObservationFieldPlanForTaxon(speciesName) {
     try {
       const taxon = await lookupHostTaxon(speciesName);
-      if (taxon.iconicTaxonName === "Plantae") return HOST_PLANT_FIELD_NAMES;
-      log(`host plant: ${taxon.query} is not Plantae; only filling ${HOST_FIELD_NAME}`, taxon);
-      return [HOST_FIELD_NAME];
+      const fieldNames = taxon.iconicTaxonName === "Plantae" ? HOST_PLANT_FIELD_NAMES : [HOST_FIELD_NAME];
+      if (taxon.iconicTaxonName !== "Plantae") {
+        log(`host plant: ${taxon.query} is not Plantae; only filling ${HOST_FIELD_NAME}`, taxon);
+      }
+      return { ...taxon, fieldNames, lookupFailed: false };
     } catch (err) {
       log(`host plant: taxa API lookup failed for ${speciesName}; only filling ${HOST_FIELD_NAME}`, err);
-      return [HOST_FIELD_NAME];
+      return {
+        query: hostTaxonSearchName(speciesName),
+        taxonName: null,
+        iconicTaxonName: null,
+        fieldNames: [HOST_FIELD_NAME],
+        lookupFailed: true
+      };
     }
   }
 
@@ -434,26 +471,34 @@
     button.id = HOST_PLANT_BUTTON_ID;
     button.type = "button";
     button.className = "btn btn-default btn-xs";
-    button.textContent = `Fill host fields: ${host.speciesName}`;
+    button.textContent = hostFieldButtonText(host.speciesName, null);
     button.style.marginTop = "8px";
     button.style.display = "inline-block";
+
+    let hostTaxonPlan = null;
+    const hostTaxonPlanPromise = hostObservationFieldPlanForTaxon(host.speciesName).then(plan => {
+      hostTaxonPlan = plan;
+      if (!button.disabled) button.textContent = hostFieldButtonText(host.speciesName, plan);
+      return plan;
+    });
+
     button.addEventListener("click", async () => {
       button.disabled = true;
       const originalText = button.textContent;
-      button.textContent = `Filling host fields: ${host.speciesName}…`;
+      button.textContent = `${hostFieldButtonText(host.speciesName, hostTaxonPlan, "Filling")}…`;
       try {
-        await fillHostPlantObservationFields(host.speciesName);
-        button.textContent = `Host fields filled: ${host.speciesName}`;
+        const plan = await fillHostPlantObservationFields(host.speciesName, hostTaxonPlanPromise);
+        button.textContent = hostFieldButtonText(host.speciesName, plan, "Filled");
       } catch (err) {
         console.error("[iNat filter] host plant: failed to fill observation fields", err);
         button.disabled = false;
         button.textContent = originalText;
-        alert(`Could not fill host plant fields for ${host.speciesName}:\n${err.message}`);
+        alert(`Could not fill host fields for ${host.speciesName}:\n${err.message}`);
       }
     });
 
     host.notesContent.insertAdjacentElement("afterend", button);
-    log(`host plant: added fill button for ${host.speciesName}`);
+    log(`host plant: added fill button for ${host.speciesName} and started taxa lookup`);
     return true;
   }
 
@@ -603,12 +648,13 @@
     return taxonId;
   }
 
-  async function fillHostPlantObservationFields(speciesName) {
+  async function fillHostPlantObservationFields(speciesName, hostTaxonPlanPromise = null) {
     const page$ = pageJQuery();
     if (!page$) throw new Error("Page jQuery is not available");
 
-    const fieldNames = await hostObservationFieldNamesForTaxon(speciesName);
-    log(`host plant: filling observation fields for ${speciesName}`, fieldNames);
+    const hostTaxonPlan = await (hostTaxonPlanPromise || hostObservationFieldPlanForTaxon(speciesName));
+    const fieldNames = hostTaxonPlan.fieldNames;
+    log(`host plant: filling observation fields for ${speciesName}`, hostTaxonPlan);
     const results = [];
     for (const fieldName of fieldNames) {
       const { beforeTaxonInputCount } = await chooseObservationField(fieldName);
@@ -616,8 +662,8 @@
       results.push(`${fieldName}: ${taxonId}`);
     }
     log(`host plant: finished filling fields for ${speciesName}`, results);
-    alert(`Filled host plant observation fields for ${speciesName}:\n${results.join("\n")}`);
-    return results;
+    alert(`Filled ${hostFieldDescription(speciesName, hostTaxonPlan)}:\n${results.join("\n")}`);
+    return hostTaxonPlan;
   }
 
   function regexFromUserInput(input) {
@@ -1252,7 +1298,7 @@
 
   function start() {
     loadSavedOptions();
-    log("starting v0.10.8");
+    log("starting v0.10.9");
     registerMenus();
 
     if (isObservationPage()) {
